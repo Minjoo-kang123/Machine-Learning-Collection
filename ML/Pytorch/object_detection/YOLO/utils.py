@@ -5,49 +5,30 @@ import matplotlib.patches as patches
 from collections import Counter
 
 def intersection_over_union(boxes_preds, boxes_labels, box_format="midpoint"):
-    """
-    Calculates intersection over union
+    #https://deep-learning-study.tistory.com/402 > 해당부분 참조해서 내용 구하기
+    #예측 박스와 label(정답)박스의 x,y 좌표 구하기
+    box1_x1 = boxes_preds[..., 0:1] - boxes_preds[..., 2:3] / 2
+    box1_y1 = boxes_preds[..., 1:2] - boxes_preds[..., 3:4] / 2
+    box1_x2 = boxes_preds[..., 0:1] + boxes_preds[..., 2:3] / 2
+    box1_y2 = boxes_preds[..., 1:2] + boxes_preds[..., 3:4] / 2
+    box2_x1 = boxes_labels[..., 0:1] - boxes_labels[..., 2:3] / 2
+    box2_y1 = boxes_labels[..., 1:2] - boxes_labels[..., 3:4] / 2
+    box2_x2 = boxes_labels[..., 0:1] + boxes_labels[..., 2:3] / 2
+    box2_y2 = boxes_labels[..., 1:2] + boxes_labels[..., 3:4] / 2
 
-    Parameters:
-        boxes_preds (tensor): Predictions of Bounding Boxes (BATCH_SIZE, 4)
-        boxes_labels (tensor): Correct labels of Bounding Boxes (BATCH_SIZE, 4)
-        box_format (str): midpoint/corners, if boxes (x,y,w,h) or (x1,y1,x2,y2)
-
-    Returns:
-        tensor: Intersection over union for all examples
-    """
-
-    if box_format == "midpoint":
-        box1_x1 = boxes_preds[..., 0:1] - boxes_preds[..., 2:3] / 2
-        box1_y1 = boxes_preds[..., 1:2] - boxes_preds[..., 3:4] / 2
-        box1_x2 = boxes_preds[..., 0:1] + boxes_preds[..., 2:3] / 2
-        box1_y2 = boxes_preds[..., 1:2] + boxes_preds[..., 3:4] / 2
-        box2_x1 = boxes_labels[..., 0:1] - boxes_labels[..., 2:3] / 2
-        box2_y1 = boxes_labels[..., 1:2] - boxes_labels[..., 3:4] / 2
-        box2_x2 = boxes_labels[..., 0:1] + boxes_labels[..., 2:3] / 2
-        box2_y2 = boxes_labels[..., 1:2] + boxes_labels[..., 3:4] / 2
-
-    if box_format == "corners":
-        box1_x1 = boxes_preds[..., 0:1]
-        box1_y1 = boxes_preds[..., 1:2]
-        box1_x2 = boxes_preds[..., 2:3]
-        box1_y2 = boxes_preds[..., 3:4]  # (N, 1)
-        box2_x1 = boxes_labels[..., 0:1]
-        box2_y1 = boxes_labels[..., 1:2]
-        box2_x2 = boxes_labels[..., 2:3]
-        box2_y2 = boxes_labels[..., 3:4]
-
+    #겹치느 모든 부분과 겹치지 않는 부분을 계산시 사용/
     x1 = torch.max(box1_x1, box2_x1)
     y1 = torch.max(box1_y1, box2_y1)
     x2 = torch.min(box1_x2, box2_x2)
     y2 = torch.min(box1_y2, box2_y2)
 
-    # .clamp(0) is for the case when they do not intersect
-    intersection = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
 
+    # clamp(0)은 교차하지 않는 경우 0으로 설정 > intersection은 교차라는 의미
+    intersection = (x2 - x1).clamp(0) * (y2 - y1).clamp(0)
+    #abs는 절대값 > 넓이를 구하는 것이기에 절대값 사용 예측 박스와 label 박스의 크기를 구함
     box1_area = abs((box1_x2 - box1_x1) * (box1_y2 - box1_y1))
     box2_area = abs((box2_x2 - box2_x1) * (box2_y2 - box2_y1))
-
+    #1e-6은 0.000001
     return intersection / (box1_area + box2_area - intersection + 1e-6)
 
 
@@ -59,7 +40,7 @@ def non_max_suppression(bboxes, iou_threshold, threshold, box_format="corners"):
         bboxes (list): list of lists containing all bboxes with each bboxes
         specified as [class_pred, prob_score, x1, y1, x2, y2]
         iou_threshold (float): threshold where predicted bboxes is correct
-        threshold (float): threshold to remove predicted bboxes (independent of IoU) 
+        threshold (float): threshold to remove predicted bboxes (independent of IoU)
         box_format (str): "midpoint" or "corners" used to specify bboxes
 
     Returns:
@@ -289,13 +270,11 @@ def get_bboxes(
 
 def convert_cellboxes(predictions, S=7):
     """
-    Converts bounding boxes output from Yolo with
-    an image split size of S into entire image ratios
-    rather than relative to cell ratios. Tried to do this
-    vectorized, but this resulted in quite difficult to read
-    code... Use as a black box? Or implement a more intuitive,
-    using 2 for loops iterating range(S) and convert them one
-    by one, resulting in a slower but more readable implementation.
+    Yolo에서 출력된 바운딩 박스를 다음과 같이 변환합니다.
+    이미지 분할 크기 S로 출력된 바운딩 박스를 셀 비율에 상대적인 것이 아니라 로 변환합니다.
+    이 작업을 시도했습니다. 벡터화했지만, 그 결과 읽기 어려운 코드... 블랙박스로 사용하시나요?
+    아니면 더 직관적으로 구현하세요, 범위를 반복하는 루프에 2를 사용하고
+    하나씩 변환하여 하나씩 변환하여 더 느리지만 더 읽기 쉬운 구현을 구현할 수 있습니다.
     """
 
     predictions = predictions.to("cpu")
